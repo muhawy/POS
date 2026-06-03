@@ -40,6 +40,12 @@ npm start
 
 The server exposes the API and serves the built frontend from `dist`.
 
+By default, SQLite is stored at `server/data/pos.sqlite`. For deployment, set `DATABASE_PATH` to a path inside a persistent disk:
+
+```bash
+DATABASE_PATH=/var/data/pos.sqlite npm start
+```
+
 ## Online Deployment
 
 This app can be deployed online to platforms that support persistent disks, such as Render, Railway, Fly.io, or a VPS.
@@ -49,5 +55,9 @@ Use these commands:
 - Build command: `npm install && npm run build`
 - Start command: `npm start`
 - Port: use the platform-provided `PORT` environment variable
+- Persistent disk mount path: `/var/data`
+- Environment variable: `DATABASE_PATH=/var/data/pos.sqlite`
+
+This repo includes `render.yaml` with a 1 GB persistent disk mounted at `/var/data`. If you deploy manually, create the disk in the hosting dashboard and use the same mount path.
 
 For a real production store, move from SQLite to a managed PostgreSQL database when multiple staff devices need to write data at the same time.

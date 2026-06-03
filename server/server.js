@@ -3,7 +3,7 @@ import { extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'node:http'
 import { dirname } from 'node:path'
-import { seedDatabase } from './db.js'
+import { databasePath, seedDatabase } from './db.js'
 import { seedData } from './seedData.js'
 import {
   adjustProductStock,
@@ -136,4 +136,5 @@ server.on('error', (error) => {
 
 server.listen(port, () => {
   console.log(`POS server running on http://localhost:${port}`)
+  console.log(`SQLite database: ${databasePath}`)
 })

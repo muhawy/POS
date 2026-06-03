@@ -1,15 +1,21 @@
 import { mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const dataDir = join(__dirname, 'data')
-const dbPath = join(dataDir, 'pos.sqlite')
+const defaultDbPath = join(__dirname, 'data', 'pos.sqlite')
+const dbPath = process.env.DATABASE_PATH
+  ? isAbsolute(process.env.DATABASE_PATH)
+    ? process.env.DATABASE_PATH
+    : resolve(process.cwd(), process.env.DATABASE_PATH)
+  : defaultDbPath
+const dataDir = dirname(dbPath)
 
 mkdirSync(dataDir, { recursive: true })
 
 export const db = new DatabaseSync(dbPath)
+export const databasePath = dbPath
 
 db.exec(`
   PRAGMA foreign_keys = ON;

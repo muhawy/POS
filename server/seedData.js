@@ -1,3 +1,9 @@
+export const defaultSettings = {
+  adminPin: '123456',
+  operatorPin: '000000',
+  taxEnabled: true,
+}
+
 export const seedData = {
   products: [
     { id: 'p-1', name: 'Arabica Coffee Beans', sku: 'COF-001', category: 'Beverage', price: 85000, cost: 52000, stock: 24 },
@@ -13,4 +19,5 @@ export const seedData = {
     { id: 'c-1', name: 'Siti Rahma', phone: '0812-7788-1020' },
     { id: 'c-2', name: 'Budi Santoso', phone: '0813-9090-4411' },
   ],
+  settings: defaultSettings,
 }

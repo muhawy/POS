@@ -4,7 +4,9 @@ import {
   Boxes,
   ClipboardList,
   CreditCard,
+  LogOut,
   ReceiptText,
+  Settings,
   ShoppingCart,
   TrendingUp,
 } from 'lucide-react'
@@ -19,17 +21,22 @@ import {
   deleteProduct as deleteProductRequest,
   fetchPosData,
   resetDemoData as resetDemoDataRequest,
+  updateSettings,
 } from './services/api'
 import { startOfToday } from './utils/dates'
 import { formatCurrency, todayLabel } from './utils/formatters'
 import { InventoryView } from './views/InventoryView'
+import { LoginView } from './views/LoginView'
 import { ReportsView } from './views/ReportsView'
 import { SalesView } from './views/SalesView'
+import { SettingsView } from './views/SettingsView'
 import { TransactionsView } from './views/TransactionsView'
 
 export function App() {
-  const [data, setData] = useState({ products: [], sales: [], customers: [] })
+  const [data, setData] = useState({ products: [], sales: [], customers: [], settings: null })
   const [activeView, setActiveView] = useState('sales')
+  const [session, setSession] = useState(null)
+  const [loginError, setLoginError] = useState('')
   const [query, setQuery] = useState('')
   const [cart, setCart] = useState([])
   const [selectedCustomer, setSelectedCustomer] = useState('c-walkin')
@@ -53,6 +60,12 @@ export function App() {
     loadServerData()
   }, [])
 
+  useEffect(() => {
+    if (session?.role !== 'admin' && ['reports', 'settings'].includes(activeView)) {
+      setActiveView('sales')
+    }
+  }, [activeView, session])
+
   const metrics = useMemo(() => {
     const today = startOfToday()
     const todaySales = data.sales.filter((sale) => new Date(sale.date) >= today)
@@ -73,7 +86,8 @@ export function App() {
   }, [data.products, query])
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
-  const tax = Math.round(subtotal * TAX_RATE)
+  const taxEnabled = data.settings?.taxEnabled ?? true
+  const tax = taxEnabled ? Math.round(subtotal * TAX_RATE) : 0
   const total = subtotal + tax
   const paid = Number(amountPaid) || 0
   const change = Math.max(paid - total, 0)
@@ -110,6 +124,31 @@ export function App() {
     setCart((current) => current.filter((item) => item.id !== productId))
   }
 
+  function login(pin) {
+    if (!data.settings) return
+
+    if (pin === data.settings.adminPin) {
+      setSession({ role: 'admin', label: 'Admin' })
+      setLoginError('')
+      return
+    }
+
+    if (pin === data.settings.operatorPin) {
+      setSession({ role: 'operator', label: 'Operator' })
+      setLoginError('')
+      return
+    }
+
+    setLoginError('PIN is not valid.')
+  }
+
+  function logout() {
+    setSession(null)
+    setActiveView('sales')
+    setCart([])
+    setAmountPaid('')
+  }
+
   async function checkout() {
     if (!cart.length || paid < total) return
 
@@ -130,6 +169,31 @@ export function App() {
     }
   }
 
+  async function saveSettings(settings) {
+    try {
+      const result = await updateSettings(settings)
+      setData(result.data)
+      setError('')
+    } catch (apiError) {
+      setError(apiError.message)
+      throw apiError
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-zinc-100 p-4 text-zinc-950">
+        <div className="rounded-md border border-zinc-200 bg-white px-4 py-3 text-sm font-medium text-zinc-600 shadow-soft">
+          Loading local data...
+        </div>
+      </main>
+    )
+  }
+
+  if (!session) {
+    return <LoginView error={loginError || error} onLogin={login} />
+  }
+
   async function saveProduct(event) {
     event.preventDefault()
     const cleanProduct = {
@@ -139,6 +203,7 @@ export function App() {
       price: Number(productForm.price),
       cost: Number(productForm.cost),
       stock: Number(productForm.stock),
+      imageUrl: productForm.imageUrl,
     }
 
     if (!cleanProduct.name || !cleanProduct.sku || cleanProduct.price < 1 || cleanProduct.stock < 0) return
@@ -195,7 +260,7 @@ export function App() {
           </div>
           <div>
             <h1 className="text-lg font-semibold">Local POS</h1>
-            <p className="text-sm text-zinc-500">Offline store manager</p>
+            <p className="text-sm text-zinc-500">{session.label}</p>
           </div>
         </div>
 
@@ -203,16 +268,33 @@ export function App() {
           <NavButton icon={ShoppingCart} label="Sales" active={activeView === 'sales'} onClick={() => setActiveView('sales')} />
           <NavButton icon={Boxes} label="Inventory" active={activeView === 'inventory'} onClick={() => setActiveView('inventory')} />
           <NavButton icon={ReceiptText} label="Transactions" active={activeView === 'transactions'} onClick={() => setActiveView('transactions')} />
-          <NavButton icon={BarChart3} label="Reports" active={activeView === 'reports'} onClick={() => setActiveView('reports')} />
+          {session.role === 'admin' && (
+            <>
+              <NavButton icon={BarChart3} label="Reports" active={activeView === 'reports'} onClick={() => setActiveView('reports')} />
+              <NavButton icon={Settings} label="Settings" active={activeView === 'settings'} onClick={() => setActiveView('settings')} />
+            </>
+          )}
         </nav>
 
-        <button
-          type="button"
-          onClick={resetDemoData}
-          className="absolute bottom-6 left-5 right-5 rounded-md border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
-        >
-          Reset Local Data
-        </button>
+        <div className="absolute bottom-6 left-5 right-5 space-y-2">
+          {session.role === 'admin' && (
+            <button
+              type="button"
+              onClick={resetDemoData}
+              className="w-full rounded-md border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+            >
+              Reset Local Data
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={logout}
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-zinc-950 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+          >
+            <LogOut size={16} />
+            Logout
+          </button>
+        </div>
       </aside>
 
       <section className="lg:pl-64">
@@ -220,14 +302,32 @@ export function App() {
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <p className="text-sm font-medium text-emerald-700">{todayLabel()}</p>
-              <h2 className="text-2xl font-semibold tracking-normal">Point of Sales</h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-2xl font-semibold tracking-normal">Point of Sales</h2>
+                <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-600">{session.label}</span>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 sm:flex">
-              <MobileTab label="Sales" active={activeView === 'sales'} onClick={() => setActiveView('sales')} />
-              <MobileTab label="Inventory" active={activeView === 'inventory'} onClick={() => setActiveView('inventory')} />
-              <MobileTab label="Transactions" active={activeView === 'transactions'} onClick={() => setActiveView('transactions')} />
-              <MobileTab label="Reports" active={activeView === 'reports'} onClick={() => setActiveView('reports')} />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="grid grid-cols-2 gap-2 sm:flex">
+                <MobileTab label="Sales" active={activeView === 'sales'} onClick={() => setActiveView('sales')} />
+                <MobileTab label="Inventory" active={activeView === 'inventory'} onClick={() => setActiveView('inventory')} />
+                <MobileTab label="Transactions" active={activeView === 'transactions'} onClick={() => setActiveView('transactions')} />
+                {session.role === 'admin' && (
+                  <>
+                    <MobileTab label="Reports" active={activeView === 'reports'} onClick={() => setActiveView('reports')} />
+                    <MobileTab label="Settings" active={activeView === 'settings'} onClick={() => setActiveView('settings')} />
+                  </>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={logout}
+                className="flex h-10 items-center justify-center gap-2 rounded-md border border-zinc-200 px-3 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 lg:hidden"
+              >
+                <LogOut size={16} />
+                Logout
+              </button>
             </div>
           </div>
         </header>
@@ -236,12 +336,6 @@ export function App() {
           {error && (
             <div className="mb-6 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
               {error}
-            </div>
-          )}
-
-          {isLoading && (
-            <div className="mb-6 rounded-md border border-zinc-200 bg-white px-4 py-3 text-sm font-medium text-zinc-600">
-              Loading server data...
             </div>
           )}
 
@@ -273,6 +367,7 @@ export function App() {
               selectedCustomer={selectedCustomer}
               subtotal={subtotal}
               tax={tax}
+              taxEnabled={taxEnabled}
               total={total}
             />
           )}
@@ -290,7 +385,11 @@ export function App() {
 
           {activeView === 'transactions' && <TransactionsView sales={data.sales} />}
 
-          {activeView === 'reports' && <ReportsView metrics={metrics} products={data.products} sales={data.sales} />}
+          {session.role === 'admin' && activeView === 'reports' && <ReportsView metrics={metrics} products={data.products} sales={data.sales} />}
+
+          {session.role === 'admin' && activeView === 'settings' && (
+            <SettingsView onSaveSettings={saveSettings} settings={data.settings} />
+          )}
         </div>
       </section>
     </main>

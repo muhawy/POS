@@ -1,8 +1,20 @@
-import { Minus, PackagePlus, Plus, Trash2 } from 'lucide-react'
+import { ImagePlus, Minus, PackagePlus, Plus, Trash2, X } from 'lucide-react'
+import { ProductImage } from '../components/ProductImage'
 import { TextField } from '../components/TextField'
 import { formatCurrency } from '../utils/formatters'
 
 export function InventoryView({ form, onAdjustStock, onDeleteProduct, onFormChange, onSaveProduct, products }) {
+  async function selectImage(file) {
+    if (!file) return
+
+    try {
+      const imageUrl = await resizeImage(file)
+      onFormChange({ ...form, imageUrl })
+    } catch {
+      onFormChange({ ...form, imageUrl: '' })
+    }
+  }
+
   return (
     <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
       <form onSubmit={onSaveProduct} className="rounded-md border border-zinc-200 bg-white p-5 shadow-soft">
@@ -17,6 +29,11 @@ export function InventoryView({ form, onAdjustStock, onDeleteProduct, onFormChan
           <TextField label="Selling Price" type="number" value={form.price} onChange={(value) => onFormChange({ ...form, price: value })} required />
           <TextField label="Cost" type="number" value={form.cost} onChange={(value) => onFormChange({ ...form, cost: value })} />
           <TextField label="Stock" type="number" value={form.stock} onChange={(value) => onFormChange({ ...form, stock: value })} required />
+          <ProductImagePicker
+            imageUrl={form.imageUrl}
+            onClear={() => onFormChange({ ...form, imageUrl: '' })}
+            onSelect={selectImage}
+          />
         </div>
         <button type="submit" className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-md bg-zinc-950 font-semibold text-white hover:bg-zinc-800">
           <Plus size={18} />
@@ -44,8 +61,13 @@ export function InventoryView({ form, onAdjustStock, onDeleteProduct, onFormChan
               {products.map((product) => (
                 <tr key={product.id}>
                   <td className="px-5 py-4">
-                    <p className="font-medium">{product.name}</p>
-                    <p className="text-xs text-zinc-500">{product.sku}</p>
+                    <div className="flex items-center gap-3">
+                      <ProductImage imageUrl={product.imageUrl} name={product.name} size="small" />
+                      <div>
+                        <p className="font-medium">{product.name}</p>
+                        <p className="text-xs text-zinc-500">{product.sku}</p>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-5 py-4">{product.category}</td>
                   <td className="px-5 py-4">{formatCurrency(product.price)}</td>
@@ -76,4 +98,70 @@ export function InventoryView({ form, onAdjustStock, onDeleteProduct, onFormChan
       </section>
     </div>
   )
+}
+
+function ProductImagePicker({ imageUrl, onClear, onSelect }) {
+  return (
+    <div>
+      <span className="mb-1 block text-sm font-medium text-zinc-600">Product Image</span>
+      <div className="flex items-center gap-3 rounded-md border border-zinc-200 p-3">
+        <ProductImage imageUrl={imageUrl} name="Product preview" size="medium" />
+        <div className="min-w-0 flex-1">
+          <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md bg-zinc-950 px-3 text-sm font-semibold text-white hover:bg-zinc-800">
+            <ImagePlus size={17} />
+            Choose Image
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(event) => {
+                onSelect(event.target.files?.[0])
+                event.target.value = ''
+              }}
+            />
+          </label>
+          {imageUrl && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="ml-2 inline-flex h-10 items-center justify-center gap-1 rounded-md border border-zinc-200 px-3 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+            >
+              <X size={16} />
+              Remove
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function resizeImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+
+    reader.onload = () => {
+      const image = new Image()
+      image.onload = () => {
+        const maxSize = 640
+        const scale = Math.min(maxSize / image.width, maxSize / image.height, 1)
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(image.width * scale)
+        canvas.height = Math.round(image.height * scale)
+
+        const context = canvas.getContext('2d')
+        if (!context) {
+          reject(new Error('Image processing is not available.'))
+          return
+        }
+
+        context.drawImage(image, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL('image/jpeg', 0.72))
+      }
+      image.onerror = reject
+      image.src = reader.result
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
 }

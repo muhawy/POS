@@ -1,4 +1,5 @@
 import { Minus, Plus, ReceiptText, Search, ShoppingCart, X } from 'lucide-react'
+import { ProductImage } from '../components/ProductImage'
 import { SummaryRow } from '../components/SummaryRow'
 import { formatCurrency } from '../utils/formatters'
 
@@ -38,15 +39,16 @@ export function SalesView(props) {
               disabled={product.stock <= 0}
               className="rounded-md border border-zinc-200 bg-white p-4 text-left shadow-sm transition hover:border-emerald-400 hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
+              <div className="mb-4 flex gap-3">
+                <ProductImage imageUrl={product.imageUrl} name={product.name} size="medium" />
+                <div className="min-w-0 flex-1">
                   <h3 className="font-semibold">{product.name}</h3>
                   <p className="mt-1 text-xs uppercase tracking-normal text-zinc-500">
                     {product.sku} · {product.category}
                   </p>
                 </div>
-                <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-600">{product.stock}</span>
               </div>
+              <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-600">Stock: {product.stock} pcs</span>
               <p className="text-lg font-semibold text-emerald-700">{formatCurrency(product.price)}</p>
             </button>
           ))}
@@ -79,9 +81,12 @@ function CartPanel(props) {
           props.cart.map((item) => (
             <div key={item.id} className="rounded-md border border-zinc-200 p-3">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-medium">{item.name}</p>
-                  <p className="text-sm text-zinc-500">{formatCurrency(item.price)}</p>
+                <div className="flex min-w-0 items-center gap-3">
+                  <ProductImage imageUrl={item.imageUrl} name={item.name} size="small" />
+                  <div className="min-w-0">
+                    <p className="font-medium">{item.name}</p>
+                    <p className="text-sm text-zinc-500">{formatCurrency(item.price)}</p>
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -111,7 +116,7 @@ function CartPanel(props) {
 
       <div className="space-y-3 border-t border-zinc-200 p-5">
         <SummaryRow label="Subtotal" value={formatCurrency(props.subtotal)} />
-        <SummaryRow label="Tax 11%" value={formatCurrency(props.tax)} />
+        <SummaryRow label={props.taxEnabled ? 'Tax 11%' : 'Tax disabled'} value={formatCurrency(props.tax)} />
         <SummaryRow label="Total" value={formatCurrency(props.total)} strong />
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">

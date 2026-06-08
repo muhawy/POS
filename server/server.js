@@ -12,6 +12,7 @@ import {
   deleteProduct,
   getAllData,
   resetDemoDatabase,
+  updateSettings,
 } from './repository.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -105,6 +106,11 @@ const server = createServer(async (request, response) => {
     if (url.pathname === '/api/sales/checkout' && request.method === 'POST') {
       const sale = checkoutSale(await readBody(request))
       sendJson(response, 201, { sale, data: getAllData() })
+      return
+    }
+
+    if (url.pathname === '/api/settings' && request.method === 'PATCH') {
+      sendJson(response, 200, updateSettings(await readBody(request)))
       return
     }
 

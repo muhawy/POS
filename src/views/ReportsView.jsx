@@ -1,3 +1,4 @@
+import { ProductImage } from '../components/ProductImage'
 import { SummaryRow } from '../components/SummaryRow'
 import { formatCurrency } from '../utils/formatters'
 
@@ -30,9 +31,12 @@ export function ReportsView({ metrics, products, sales }) {
         <div className="space-y-3">
           {bestSellers.map((product) => (
             <div key={product.id} className="flex items-center justify-between rounded-md border border-zinc-100 p-3">
-              <div>
-                <p className="font-medium">{product.name}</p>
-                <p className="text-sm text-zinc-500">{product.category}</p>
+              <div className="flex min-w-0 items-center gap-3">
+                <ProductImage imageUrl={product.imageUrl} name={product.name} size="small" />
+                <div className="min-w-0">
+                  <p className="font-medium">{product.name}</p>
+                  <p className="text-sm text-zinc-500">{product.category}</p>
+                </div>
               </div>
               <span className="rounded-md bg-emerald-100 px-2 py-1 text-sm font-semibold text-emerald-700">{product.sold} sold</span>
             </div>

@@ -1,5 +1,5 @@
 import { db, resetDatabase } from './db.js'
-import { seedData } from './seedData.js'
+import { defaultSettings, seedData } from './seedData.js'
 
 const TAX_RATE = 0.11
 
@@ -8,11 +8,62 @@ export function getAllData() {
     products: getProducts(),
     customers: getCustomers(),
     sales: getSales(),
+    settings: getSettings(),
   }
 }
 
+export function getSettings() {
+  const rows = db.prepare('SELECT key, value FROM settings').all()
+  const settings = { ...defaultSettings }
+
+  rows.forEach((row) => {
+    try {
+      settings[row.key] = JSON.parse(row.value)
+    } catch {
+      settings[row.key] = row.value
+    }
+  })
+
+  return {
+    ...settings,
+    taxEnabled: settings.taxEnabled ?? defaultSettings.taxEnabled,
+  }
+}
+
+function assertPin(pin, label) {
+  if (!/^\d{6}$/.test(String(pin))) {
+    throw new Error(`${label} PIN must be exactly 6 numbers.`)
+  }
+}
+
+export function updateSettings(input) {
+  const settings = {
+    ...getSettings(),
+    ...input,
+  }
+
+  assertPin(settings.adminPin, 'Admin')
+  assertPin(settings.operatorPin, 'Operator')
+  if (settings.adminPin === settings.operatorPin) {
+    throw new Error('Admin and operator PINs must be different.')
+  }
+  settings.taxEnabled = Boolean(settings.taxEnabled)
+
+  const statement = db.prepare(`
+    INSERT INTO settings (key, value)
+    VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `)
+
+  Object.entries(settings).forEach(([key, value]) => {
+    statement.run(key, JSON.stringify(value))
+  })
+
+  return { settings: getSettings(), data: getAllData() }
+}
+
 export function getProducts() {
-  return db.prepare('SELECT id, name, sku, category, price, cost, stock FROM products ORDER BY rowid DESC').all()
+  return db.prepare('SELECT id, name, sku, category, price, cost, stock, image_url AS imageUrl FROM products ORDER BY rowid DESC').all()
 }
 
 export function getCustomers() {
@@ -45,6 +96,7 @@ export function getSales() {
       sku,
       price,
       cost,
+      image_url AS imageUrl,
       quantity,
       line_total AS lineTotal
     FROM sale_items
@@ -66,6 +118,7 @@ export function createProduct(input) {
     price: Number(input.price),
     cost: Number(input.cost) || 0,
     stock: Number(input.stock),
+    imageUrl: String(input.imageUrl ?? ''),
   }
 
   if (!product.name || !product.sku || product.price < 1 || product.stock < 0) {
@@ -73,9 +126,9 @@ export function createProduct(input) {
   }
 
   db.prepare(`
-    INSERT INTO products (id, name, sku, category, price, cost, stock)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(product.id, product.name, product.sku, product.category, product.price, product.cost, product.stock)
+    INSERT INTO products (id, name, sku, category, price, cost, stock, image_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(product.id, product.name, product.sku, product.category, product.price, product.cost, product.stock, product.imageUrl)
 
   return product
 }
@@ -86,7 +139,7 @@ export function adjustProductStock(productId, amount) {
 
   const nextStock = Math.max(product.stock + Number(amount), 0)
   db.prepare('UPDATE products SET stock = ? WHERE id = ?').run(nextStock, productId)
-  return db.prepare('SELECT id, name, sku, category, price, cost, stock FROM products WHERE id = ?').get(productId)
+  return db.prepare('SELECT id, name, sku, category, price, cost, stock, image_url AS imageUrl FROM products WHERE id = ?').get(productId)
 }
 
 export function deleteProduct(productId) {
@@ -105,7 +158,7 @@ export function checkoutSale(input) {
   if (!customer) throw new Error('Customer not found.')
 
   const products = cart.map((cartItem) => {
-    const product = db.prepare('SELECT id, name, sku, price, cost, stock FROM products WHERE id = ?').get(cartItem.id)
+    const product = db.prepare('SELECT id, name, sku, price, cost, stock, image_url AS imageUrl FROM products WHERE id = ?').get(cartItem.id)
     const quantity = Number(cartItem.quantity)
     if (!product) throw new Error(`Product ${cartItem.id} not found.`)
     if (quantity < 1) throw new Error('Quantity must be at least 1.')
@@ -114,7 +167,7 @@ export function checkoutSale(input) {
   })
 
   const subtotal = products.reduce((sum, item) => sum + item.price * item.quantity, 0)
-  const tax = Math.round(subtotal * TAX_RATE)
+  const tax = getSettings().taxEnabled ? Math.round(subtotal * TAX_RATE) : 0
   const total = subtotal + tax
   if (paid < total) throw new Error('Paid amount is lower than total.')
 
@@ -124,6 +177,7 @@ export function checkoutSale(input) {
     sku: item.sku,
     price: item.price,
     cost: item.cost,
+    imageUrl: item.imageUrl || '',
     quantity: item.quantity,
     lineTotal: item.price * item.quantity,
   }))
@@ -169,13 +223,13 @@ export function checkoutSale(input) {
     )
 
     const insertItem = db.prepare(`
-      INSERT INTO sale_items (sale_id, product_id, name, sku, price, cost, quantity, line_total)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sale_items (sale_id, product_id, name, sku, price, cost, image_url, quantity, line_total)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     const updateStock = db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?')
 
     sale.items.forEach((item) => {
-      insertItem.run(sale.id, item.productId, item.name, item.sku, item.price, item.cost, item.quantity, item.lineTotal)
+      insertItem.run(sale.id, item.productId, item.name, item.sku, item.price, item.cost, item.imageUrl, item.quantity, item.lineTotal)
       updateStock.run(item.quantity, item.productId)
     })
 

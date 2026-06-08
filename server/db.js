@@ -27,7 +27,8 @@ db.exec(`
     category TEXT NOT NULL,
     price INTEGER NOT NULL,
     cost INTEGER NOT NULL DEFAULT 0,
-    stock INTEGER NOT NULL DEFAULT 0
+    stock INTEGER NOT NULL DEFAULT 0,
+    image_url TEXT NOT NULL DEFAULT ''
   );
 
   CREATE TABLE IF NOT EXISTS customers (
@@ -60,11 +61,30 @@ db.exec(`
     sku TEXT NOT NULL,
     price INTEGER NOT NULL,
     cost INTEGER NOT NULL,
+    image_url TEXT NOT NULL DEFAULT '',
     quantity INTEGER NOT NULL,
     line_total INTEGER NOT NULL,
     FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
 `)
+
+for (const statement of [
+  "ALTER TABLE products ADD COLUMN image_url TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE sale_items ADD COLUMN image_url TEXT NOT NULL DEFAULT ''",
+]) {
+  try {
+    db.exec(statement)
+  } catch (error) {
+    if (!String(error.message).includes('duplicate column name')) {
+      throw error
+    }
+  }
+}
 
 export function resetDatabase(seedData) {
   db.exec(`
@@ -72,23 +92,32 @@ export function resetDatabase(seedData) {
     DELETE FROM sales;
     DELETE FROM products;
     DELETE FROM customers;
+    DELETE FROM settings;
   `)
 
   const insertProduct = db.prepare(`
-    INSERT INTO products (id, name, sku, category, price, cost, stock)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO products (id, name, sku, category, price, cost, stock, image_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `)
   const insertCustomer = db.prepare(`
     INSERT INTO customers (id, name, phone)
     VALUES (?, ?, ?)
   `)
+  const insertSetting = db.prepare(`
+    INSERT INTO settings (key, value)
+    VALUES (?, ?)
+  `)
 
   seedData.products.forEach((product) => {
-    insertProduct.run(product.id, product.name, product.sku, product.category, product.price, product.cost, product.stock)
+    insertProduct.run(product.id, product.name, product.sku, product.category, product.price, product.cost, product.stock, product.imageUrl || '')
   })
 
   seedData.customers.forEach((customer) => {
     insertCustomer.run(customer.id, customer.name, customer.phone)
+  })
+
+  Object.entries(seedData.settings).forEach(([key, value]) => {
+    insertSetting.run(key, JSON.stringify(value))
   })
 }
 
@@ -96,5 +125,13 @@ export function seedDatabase(seedData) {
   const count = db.prepare('SELECT COUNT(*) AS total FROM products').get()
   if (count.total === 0) {
     resetDatabase(seedData)
+  }
+
+  const settingsCount = db.prepare('SELECT COUNT(*) AS total FROM settings').get()
+  if (settingsCount.total === 0) {
+    const insertSetting = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)')
+    Object.entries(seedData.settings).forEach(([key, value]) => {
+      insertSetting.run(key, JSON.stringify(value))
+    })
   }
 }

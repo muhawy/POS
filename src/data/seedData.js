@@ -2,6 +2,12 @@ export const STORAGE_KEY = 'local-pos-data-v1'
 
 export const TAX_RATE = 0.11
 
+export const defaultSettings = {
+  adminPin: '123456',
+  operatorPin: '000000',
+  taxEnabled: true,
+}
+
 export const emptyProductForm = {
   name: '',
   sku: '',
@@ -9,6 +15,7 @@ export const emptyProductForm = {
   price: '',
   cost: '',
   stock: '',
+  imageUrl: '',
 }
 
 export const seedData = {
@@ -26,4 +33,5 @@ export const seedData = {
     { id: 'c-1', name: 'Siti Rahma', phone: '0812-7788-1020' },
     { id: 'c-2', name: 'Budi Santoso', phone: '0813-9090-4411' },
   ],
+  settings: defaultSettings,
 }

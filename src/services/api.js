@@ -9,6 +9,13 @@ function clone(value) {
 }
 
 function normalizeData(data) {
+  const productCategories = Array.isArray(data?.products)
+    ? data.products.map((product) => String(product.category || '').trim()).filter(Boolean)
+    : []
+  const settingsCategories = Array.isArray(data?.settings?.categories) ? data.settings.categories : null
+  const baseCategories = settingsCategories ?? (productCategories.length > 0 ? productCategories : defaultSettings.categories)
+  const categories = [...new Set(baseCategories.map((category) => String(category).trim()).filter(Boolean))]
+
   return {
     products: Array.isArray(data?.products)
       ? data.products.map((product) => ({ ...product, imageUrl: product.imageUrl || '' }))
@@ -26,6 +33,7 @@ function normalizeData(data) {
       ...defaultSettings,
       ...(data?.settings || {}),
       taxEnabled: data?.settings?.taxEnabled ?? defaultSettings.taxEnabled,
+      categories,
     },
   }
 }
@@ -223,6 +231,9 @@ function updateLocalSettings(input) {
     throw new Error('Admin and operator PINs must be different.')
   }
   settings.taxEnabled = Boolean(settings.taxEnabled)
+  settings.categories = Array.isArray(settings.categories)
+    ? [...new Set(settings.categories.map((category) => String(category).trim()).filter(Boolean))]
+    : defaultSettings.categories
 
   const nextData = writeLocalData({ ...data, settings })
   return { settings: nextData.settings, data: nextData }

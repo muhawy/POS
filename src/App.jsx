@@ -199,7 +199,7 @@ export function App() {
     const cleanProduct = {
       name: productForm.name.trim(),
       sku: productForm.sku.trim().toUpperCase(),
-      category: productForm.category.trim() || 'General',
+      category: productForm.category.trim() || data.settings?.categories?.[0] || 'General',
       price: Number(productForm.price),
       cost: Number(productForm.cost),
       stock: Number(productForm.stock),
@@ -249,6 +249,22 @@ export function App() {
     } catch (apiError) {
       setError(apiError.message)
     }
+  }
+
+  function exportData() {
+    if (session.role !== 'admin') return
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const workbook = createSalesReportWorkbook(data.sales, metrics)
+    const blob = new Blob([workbook], { type: 'application/vnd.ms-excel;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `sales-report-${timestamp}.xls`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -374,6 +390,7 @@ export function App() {
 
           {activeView === 'inventory' && (
             <InventoryView
+              categories={data.settings?.categories}
               form={productForm}
               onAdjustStock={adjustStock}
               onDeleteProduct={deleteProduct}
@@ -385,7 +402,9 @@ export function App() {
 
           {activeView === 'transactions' && <TransactionsView sales={data.sales} />}
 
-          {session.role === 'admin' && activeView === 'reports' && <ReportsView metrics={metrics} products={data.products} sales={data.sales} />}
+          {session.role === 'admin' && activeView === 'reports' && (
+            <ReportsView metrics={metrics} onExportData={exportData} products={data.products} sales={data.sales} />
+          )}
 
           {session.role === 'admin' && activeView === 'settings' && (
             <SettingsView onSaveSettings={saveSettings} settings={data.settings} />
@@ -394,4 +413,118 @@ export function App() {
       </section>
     </main>
   )
+}
+
+function createSalesReportWorkbook(sales, metrics) {
+  const transactions = sales.map((sale) => ({
+    invoice: sale.number,
+    date: todayLabel(new Date(sale.date)),
+    customer: sale.customerName,
+    payment: sale.paymentMethod,
+    items: sale.items.reduce((sum, item) => sum + item.quantity, 0),
+    subtotal: sale.subtotal,
+    tax: sale.tax,
+    total: sale.total,
+    paid: sale.paid,
+    change: sale.change,
+    profit: sale.profit,
+  }))
+  const saleItems = sales.flatMap((sale) =>
+    sale.items.map((item) => ({
+      invoice: sale.number,
+      date: todayLabel(new Date(sale.date)),
+      sku: item.sku,
+      product: item.name,
+      quantity: item.quantity,
+      price: item.price,
+      cost: item.cost,
+      lineTotal: item.lineTotal,
+      profit: (item.price - item.cost) * item.quantity,
+    })),
+  )
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      table { border-collapse: collapse; font-family: Arial, sans-serif; font-size: 12px; margin-bottom: 24px; }
+      th { background: #d9ead3; font-weight: 700; }
+      th, td { border: 1px solid #999; padding: 6px 8px; }
+      .title { background: #111827; color: #fff; font-size: 16px; text-align: left; }
+      .number { mso-number-format: "0"; text-align: right; }
+    </style>
+  </head>
+  <body>
+    ${createExcelTable('Sales Report Summary', [
+      ['Generated At', todayLabel(new Date())],
+      ['Revenue', metrics.revenue],
+      ['Gross Profit', metrics.grossProfit],
+      ['Transactions', metrics.orders],
+    ])}
+    ${createExcelTable('Transactions', [
+      ['Invoice', 'Date', 'Customer', 'Payment', 'Items', 'Subtotal', 'Tax', 'Total', 'Paid', 'Change', 'Profit'],
+      ...transactions.map((sale) => [
+        sale.invoice,
+        sale.date,
+        sale.customer,
+        sale.payment,
+        sale.items,
+        sale.subtotal,
+        sale.tax,
+        sale.total,
+        sale.paid,
+        sale.change,
+        sale.profit,
+      ]),
+    ])}
+    ${createExcelTable('Sale Items', [
+      ['Invoice', 'Date', 'SKU', 'Product', 'Quantity', 'Price', 'Cost', 'Line Total', 'Profit'],
+      ...saleItems.map((item) => [
+        item.invoice,
+        item.date,
+        item.sku,
+        item.product,
+        item.quantity,
+        item.price,
+        item.cost,
+        item.lineTotal,
+        item.profit,
+      ]),
+    ])}
+  </body>
+</html>`
+}
+
+function createExcelTable(title, rows) {
+  const colSpan = Math.max(...rows.map((row) => row.length), 1)
+
+  return `<table>
+    <thead>
+      <tr><th class="title" colspan="${colSpan}">${escapeExcelCell(title)}</th></tr>
+    </thead>
+    <tbody>
+      ${rows.map((row, index) => createExcelRow(row, index === 0 && rows.length > 1)).join('')}
+    </tbody>
+  </table>`
+}
+
+function createExcelRow(row, isHeader) {
+  const tag = isHeader ? 'th' : 'td'
+
+  return `<tr>${row
+    .map((cell) => {
+      const isNumber = typeof cell === 'number'
+      const className = isNumber ? ' class="number"' : ''
+      return `<${tag}${className}>${escapeExcelCell(cell)}</${tag}>`
+    })
+    .join('')}</tr>`
+}
+
+function escapeExcelCell(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
 }

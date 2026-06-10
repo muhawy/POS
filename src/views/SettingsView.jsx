@@ -1,8 +1,9 @@
-import { Save, ShieldCheck } from 'lucide-react'
+import { Plus, Save, ShieldCheck, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 export function SettingsView({ onSaveSettings, settings }) {
   const [form, setForm] = useState(settings)
+  const [categoryName, setCategoryName] = useState('')
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -12,7 +13,34 @@ export function SettingsView({ onSaveSettings, settings }) {
   async function submit(event) {
     event.preventDefault()
     setMessage('')
-    await onSaveSettings(form)
+    await onSaveSettings({
+      ...form,
+      categories: cleanCategories(form.categories),
+    })
+    setMessage('Settings saved')
+  }
+
+  async function addCategory() {
+    const category = categoryName.trim()
+    if (!category) return
+
+    const categories = cleanCategories([...(form.categories || []), category])
+    const nextForm = { ...form, categories }
+    setForm(nextForm)
+    setCategoryName('')
+    setMessage('')
+    await onSaveSettings(nextForm)
+    setMessage('Settings saved')
+  }
+
+  async function removeCategory(category) {
+    const nextForm = {
+      ...form,
+      categories: cleanCategories((form.categories || []).filter((item) => item !== category)),
+    }
+    setForm(nextForm)
+    setMessage('')
+    await onSaveSettings(nextForm)
     setMessage('Settings saved')
   }
 
@@ -71,8 +99,54 @@ export function SettingsView({ onSaveSettings, settings }) {
           </div>
         </div>
       </section>
+
+      <section className="rounded-md border border-zinc-200 bg-white p-5 shadow-soft xl:col-span-2">
+        <h3 className="mb-4 text-lg font-semibold">Category Templates</h3>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <input
+            value={categoryName}
+            onChange={(event) => setCategoryName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                addCategory()
+              }
+            }}
+            className="h-11 flex-1 rounded-md border border-zinc-200 px-3 text-sm outline-none ring-emerald-500 focus:ring-2"
+            placeholder="New category name"
+          />
+          <button
+            type="button"
+            onClick={addCategory}
+            className="flex h-11 items-center justify-center gap-2 rounded-md bg-zinc-950 px-4 font-semibold text-white hover:bg-zinc-800"
+          >
+            <Plus size={18} />
+            Add Category
+          </button>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {cleanCategories(form.categories).map((category) => (
+            <span key={category} className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-700">
+              {category}
+              <button
+                type="button"
+                title={`Remove ${category}`}
+                onClick={() => removeCategory(category)}
+                className="grid size-6 place-items-center rounded-md text-zinc-400 hover:bg-red-50 hover:text-red-600"
+              >
+                <Trash2 size={14} />
+              </button>
+            </span>
+          ))}
+        </div>
+      </section>
     </div>
   )
+}
+
+function cleanCategories(categories) {
+  return [...new Set((categories || []).map((category) => String(category).trim()).filter(Boolean))]
 }
 
 function PinField({ label, onChange, value }) {

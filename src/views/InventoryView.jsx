@@ -3,7 +3,7 @@ import { ProductImage } from '../components/ProductImage'
 import { TextField } from '../components/TextField'
 import { formatCurrency } from '../utils/formatters'
 
-export function InventoryView({ form, onAdjustStock, onDeleteProduct, onFormChange, onSaveProduct, products }) {
+export function InventoryView({ categories = [], form, onAdjustStock, onDeleteProduct, onFormChange, onSaveProduct, products }) {
   async function selectImage(file) {
     if (!file) return
 
@@ -25,7 +25,11 @@ export function InventoryView({ form, onAdjustStock, onDeleteProduct, onFormChan
         <div className="space-y-3">
           <TextField label="Product Name" value={form.name} onChange={(value) => onFormChange({ ...form, name: value })} required />
           <TextField label="SKU" value={form.sku} onChange={(value) => onFormChange({ ...form, sku: value })} required />
-          <TextField label="Category" value={form.category} onChange={(value) => onFormChange({ ...form, category: value })} />
+          <CategorySelect
+            categories={categories}
+            value={form.category}
+            onChange={(value) => onFormChange({ ...form, category: value })}
+          />
           <TextField label="Selling Price" type="number" value={form.price} onChange={(value) => onFormChange({ ...form, price: value })} required />
           <TextField label="Cost" type="number" value={form.cost} onChange={(value) => onFormChange({ ...form, cost: value })} />
           <TextField label="Stock" type="number" value={form.stock} onChange={(value) => onFormChange({ ...form, stock: value })} required />
@@ -97,6 +101,29 @@ export function InventoryView({ form, onAdjustStock, onDeleteProduct, onFormChan
         </div>
       </section>
     </div>
+  )
+}
+
+function CategorySelect({ categories, onChange, value }) {
+  const categoryOptions = [...new Set(categories.map((category) => String(category).trim()).filter(Boolean))]
+  const hasValue = value && categoryOptions.includes(value)
+
+  return (
+    <label className="block">
+      <span className="mb-1 block text-sm font-medium text-zinc-600">Category</span>
+      <select
+        value={hasValue ? value : ''}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-11 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm outline-none ring-emerald-500 focus:ring-2"
+      >
+        <option value="">Select category</option>
+        {categoryOptions.map((category) => (
+          <option key={category} value={category}>
+            {category}
+          </option>
+        ))}
+      </select>
+    </label>
   )
 }
 

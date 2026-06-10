@@ -2,6 +2,7 @@ export const defaultSettings = {
   adminPin: '123456',
   operatorPin: '000000',
   taxEnabled: true,
+  categories: ['Beverage', 'Drink', 'Bakery', 'Food'],
 }
 
 export const seedData = {

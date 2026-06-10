@@ -24,9 +24,14 @@ export function getSettings() {
     }
   })
 
+  const categories = Array.isArray(settings.categories)
+    ? settings.categories.map((category) => String(category).trim()).filter(Boolean)
+    : defaultSettings.categories
+
   return {
     ...settings,
     taxEnabled: settings.taxEnabled ?? defaultSettings.taxEnabled,
+    categories: [...new Set(categories)],
   }
 }
 
@@ -48,6 +53,9 @@ export function updateSettings(input) {
     throw new Error('Admin and operator PINs must be different.')
   }
   settings.taxEnabled = Boolean(settings.taxEnabled)
+  settings.categories = Array.isArray(settings.categories)
+    ? [...new Set(settings.categories.map((category) => String(category).trim()).filter(Boolean))]
+    : defaultSettings.categories
 
   const statement = db.prepare(`
     INSERT INTO settings (key, value)

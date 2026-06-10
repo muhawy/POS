@@ -88,11 +88,17 @@ export function getSales() {
       customer_name AS customerName,
       payment_method AS paymentMethod,
       subtotal,
+      discount,
+      discount_type AS discountType,
+      discount_value AS discountValue,
       tax,
       total,
       paid,
       change_amount AS change,
-      profit
+      profit,
+      status,
+      cancelled_at AS cancelledAt,
+      cancellation_type AS cancellationType
     FROM sales
     ORDER BY date DESC
   `).all()
@@ -157,6 +163,8 @@ export function deleteProduct(productId) {
 export function checkoutSale(input) {
   const cart = Array.isArray(input.cart) ? input.cart : []
   const paid = Number(input.paid) || 0
+  const discountType = input.discountType === 'percent' ? 'percent' : 'amount'
+  const discountValue = Number(input.discountValue ?? input.discount) || 0
   const paymentMethod = String(input.paymentMethod ?? 'Cash')
   const customerId = String(input.customerId ?? 'c-walkin')
 
@@ -175,8 +183,10 @@ export function checkoutSale(input) {
   })
 
   const subtotal = products.reduce((sum, item) => sum + item.price * item.quantity, 0)
-  const tax = getSettings().taxEnabled ? Math.round(subtotal * TAX_RATE) : 0
-  const total = subtotal + tax
+  const appliedDiscount = calculateDiscount(subtotal, discountType, discountValue)
+  const taxableSubtotal = subtotal - appliedDiscount
+  const tax = getSettings().taxEnabled ? Math.round(taxableSubtotal * TAX_RATE) : 0
+  const total = taxableSubtotal + tax
   if (paid < total) throw new Error('Paid amount is lower than total.')
 
   const saleItems = products.map((item) => ({
@@ -199,11 +209,17 @@ export function checkoutSale(input) {
     customerName: customer.name,
     paymentMethod,
     subtotal,
+    discount: appliedDiscount,
+    discountType,
+    discountValue,
     tax,
     total,
     paid,
     change: paid - total,
-    profit,
+    profit: profit - appliedDiscount,
+    status: 'completed',
+    cancelledAt: null,
+    cancellationType: null,
     items: saleItems,
   }
 
@@ -212,9 +228,9 @@ export function checkoutSale(input) {
     db.prepare(`
       INSERT INTO sales (
         id, number, date, customer_id, customer_name, payment_method,
-        subtotal, tax, total, paid, change_amount, profit
+        subtotal, discount, discount_type, discount_value, tax, total, paid, change_amount, profit, status, cancelled_at, cancellation_type
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       sale.id,
       sale.number,
@@ -223,11 +239,17 @@ export function checkoutSale(input) {
       sale.customerName,
       sale.paymentMethod,
       sale.subtotal,
+      sale.discount,
+      sale.discountType,
+      sale.discountValue,
       sale.tax,
       sale.total,
       sale.paid,
       sale.change,
       sale.profit,
+      sale.status,
+      sale.cancelledAt,
+      sale.cancellationType,
     )
 
     const insertItem = db.prepare(`
@@ -250,7 +272,48 @@ export function checkoutSale(input) {
   return sale
 }
 
+export function cancelSale(saleId, type) {
+  const cancellationType = type === 'refund' ? 'refund' : 'void'
+  const sale = db.prepare('SELECT id, status FROM sales WHERE id = ?').get(saleId)
+  if (!sale) throw new Error('Sale not found.')
+  if ((sale.status || 'completed') !== 'completed') throw new Error('Sale is already cancelled.')
+
+  const items = db.prepare('SELECT product_id AS productId, quantity FROM sale_items WHERE sale_id = ?').all(saleId)
+
+  db.exec('BEGIN')
+  try {
+    const updateStock = db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?')
+    items.forEach((item) => {
+      updateStock.run(Number(item.quantity) || 0, item.productId)
+    })
+    db.prepare(`
+      UPDATE sales
+      SET status = ?, cancelled_at = ?, cancellation_type = ?
+      WHERE id = ?
+    `).run(cancellationType === 'refund' ? 'refunded' : 'voided', new Date().toISOString(), cancellationType, saleId)
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+
+  return getSales().find((item) => item.id === saleId)
+}
+
 export function resetDemoDatabase() {
   resetDatabase(seedData)
   return getAllData()
+}
+
+export function restoreDatabaseBackup(input) {
+  resetDatabase(input)
+  return getAllData()
+}
+
+function calculateDiscount(subtotal, discountType, discountValue) {
+  const value = Math.max(Number(discountValue) || 0, 0)
+  if (discountType === 'percent') {
+    return Math.min(Math.round(subtotal * Math.min(value, 100) / 100), subtotal)
+  }
+  return Math.min(value, subtotal)
 }

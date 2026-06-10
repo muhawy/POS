@@ -13,6 +13,11 @@
     background: #f4f4f5;
   }
 
+  .dark body {
+    background: #09090b;
+    color: #f4f4f5;
+  }
+
   button,
   input,
   select {
@@ -24,4 +29,46 @@
   .icon-button {
     @apply grid size-8 place-items-center rounded-md border border-zinc-200 bg-white text-zinc-600 transition hover:bg-zinc-50 hover:text-zinc-950;
   }
+}
+
+.dark .bg-white,
+.dark .bg-white\/95 {
+  background-color: rgb(24 24 27 / var(--tw-bg-opacity, 1));
+}
+
+.dark .bg-zinc-100,
+.dark .bg-zinc-50 {
+  background-color: rgb(39 39 42 / var(--tw-bg-opacity, 1));
+}
+
+.dark .text-zinc-950,
+.dark .text-zinc-800,
+.dark .text-zinc-700 {
+  color: rgb(244 244 245 / var(--tw-text-opacity, 1));
+}
+
+.dark .text-zinc-600,
+.dark .text-zinc-500,
+.dark .text-zinc-400 {
+  color: rgb(161 161 170 / var(--tw-text-opacity, 1));
+}
+
+.dark .border-zinc-300,
+.dark .border-zinc-200,
+.dark .border-zinc-100 {
+  border-color: rgb(63 63 70 / var(--tw-border-opacity, 1));
+}
+
+.dark input,
+.dark select {
+  background-color: #18181b;
+  color: #f4f4f5;
+}
+
+.dark input::placeholder {
+  color: #71717a;
+}
+
+.dark .shadow-soft {
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
 }

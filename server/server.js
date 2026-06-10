@@ -8,10 +8,12 @@ import { seedData } from './seedData.js'
 import {
   adjustProductStock,
   checkoutSale,
+  cancelSale,
   createProduct,
   deleteProduct,
   getAllData,
   resetDemoDatabase,
+  restoreDatabaseBackup,
   updateSettings,
 } from './repository.js'
 
@@ -109,6 +111,14 @@ const server = createServer(async (request, response) => {
       return
     }
 
+    const cancelSaleMatch = url.pathname.match(/^\/api\/sales\/([^/]+)\/cancel$/)
+    if (cancelSaleMatch && request.method === 'POST') {
+      const body = await readBody(request)
+      const sale = cancelSale(cancelSaleMatch[1], body.type)
+      sendJson(response, 200, { sale, data: getAllData() })
+      return
+    }
+
     if (url.pathname === '/api/settings' && request.method === 'PATCH') {
       sendJson(response, 200, updateSettings(await readBody(request)))
       return
@@ -116,6 +126,11 @@ const server = createServer(async (request, response) => {
 
     if (url.pathname === '/api/reset' && request.method === 'POST') {
       sendJson(response, 200, resetDemoDatabase())
+      return
+    }
+
+    if (url.pathname === '/api/import' && request.method === 'POST') {
+      sendJson(response, 200, { data: restoreDatabaseBackup(await readBody(request)) })
       return
     }
 

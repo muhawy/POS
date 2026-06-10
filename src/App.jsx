@@ -5,9 +5,11 @@ import {
   ClipboardList,
   CreditCard,
   LogOut,
+  Moon,
   ReceiptText,
   Settings,
   ShoppingCart,
+  Sun,
   TrendingUp,
 } from 'lucide-react'
 import { MetricCard } from './components/MetricCard'
@@ -16,11 +18,13 @@ import { NavButton } from './components/NavButton'
 import { emptyProductForm, TAX_RATE } from './data/seedData'
 import {
   adjustProductStock,
+  cancelSale,
   checkoutSale,
   createProduct,
   deleteProduct as deleteProductRequest,
   fetchPosData,
   resetDemoData as resetDemoDataRequest,
+  restoreBackupData,
   updateSettings,
 } from './services/api'
 import { startOfToday } from './utils/dates'
@@ -42,9 +46,18 @@ export function App() {
   const [selectedCustomer, setSelectedCustomer] = useState('c-walkin')
   const [paymentMethod, setPaymentMethod] = useState('Cash')
   const [amountPaid, setAmountPaid] = useState('')
+  const [discountAmount, setDiscountAmount] = useState('')
+  const [discountType, setDiscountType] = useState('amount')
+  const [theme, setTheme] = useState(() => window.localStorage.getItem('local-pos-theme') || 'light')
+  const [recentSale, setRecentSale] = useState(null)
   const [productForm, setProductForm] = useState(emptyProductForm)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark')
+    window.localStorage.setItem('local-pos-theme', theme)
+  }, [theme])
 
   useEffect(() => {
     async function loadServerData() {
@@ -68,13 +81,14 @@ export function App() {
 
   const metrics = useMemo(() => {
     const today = startOfToday()
-    const todaySales = data.sales.filter((sale) => new Date(sale.date) >= today)
-    const revenue = data.sales.reduce((sum, sale) => sum + sale.total, 0)
+    const completedSales = data.sales.filter((sale) => (sale.status || 'completed') === 'completed')
+    const todaySales = completedSales.filter((sale) => new Date(sale.date) >= today)
+    const revenue = completedSales.reduce((sum, sale) => sum + sale.total, 0)
     const todayRevenue = todaySales.reduce((sum, sale) => sum + sale.total, 0)
     const lowStock = data.products.filter((product) => product.stock <= 10).length
-    const grossProfit = data.sales.reduce((sum, sale) => sum + sale.profit, 0)
+    const grossProfit = completedSales.reduce((sum, sale) => sum + sale.profit, 0)
 
-    return { revenue, todayRevenue, orders: data.sales.length, lowStock, grossProfit }
+    return { revenue, todayRevenue, orders: completedSales.length, lowStock, grossProfit }
   }, [data])
 
   const filteredProducts = useMemo(() => {
@@ -86,9 +100,12 @@ export function App() {
   }, [data.products, query])
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  const discountValue = Math.max(Number(discountAmount) || 0, 0)
+  const discount = calculateDiscount(subtotal, discountType, discountValue)
   const taxEnabled = data.settings?.taxEnabled ?? true
-  const tax = taxEnabled ? Math.round(subtotal * TAX_RATE) : 0
-  const total = subtotal + tax
+  const taxableSubtotal = subtotal - discount
+  const tax = taxEnabled ? Math.round(taxableSubtotal * TAX_RATE) : 0
+  const total = taxableSubtotal + tax
   const paid = Number(amountPaid) || 0
   const change = Math.max(paid - total, 0)
 
@@ -147,6 +164,8 @@ export function App() {
     setActiveView('sales')
     setCart([])
     setAmountPaid('')
+    setDiscountAmount('')
+    setRecentSale(null)
   }
 
   async function checkout() {
@@ -156,13 +175,18 @@ export function App() {
       const result = await checkoutSale({
         cart,
         customerId: selectedCustomer,
+        discount,
+        discountType,
+        discountValue,
         paymentMethod,
         paid,
       })
       setData(result.data)
       setCart([])
       setAmountPaid('')
+      setDiscountAmount('')
       setSelectedCustomer('c-walkin')
+      setRecentSale(result.sale)
       setError('')
     } catch (apiError) {
       setError(apiError.message)
@@ -244,7 +268,9 @@ export function App() {
       setData(await resetDemoDataRequest())
       setCart([])
       setAmountPaid('')
+      setDiscountAmount('')
       setSelectedCustomer('c-walkin')
+      setRecentSale(null)
       setError('')
     } catch (apiError) {
       setError(apiError.message)
@@ -256,15 +282,81 @@ export function App() {
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     const workbook = createSalesReportWorkbook(data.sales, metrics)
-    const blob = new Blob([workbook], { type: 'application/vnd.ms-excel;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `sales-report-${timestamp}.xls`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+    downloadBlob(workbook, `sales-report-${timestamp}.xls`, 'application/vnd.ms-excel;charset=utf-8')
+  }
+
+  function exportCsvData() {
+    if (session.role !== 'admin') return
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    downloadBlob(createSalesReportCsv(data.sales), `sales-report-${timestamp}.csv`, 'text/csv;charset=utf-8')
+  }
+
+  function exportBackup() {
+    if (session.role !== 'admin') return
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    downloadBlob(JSON.stringify(data, null, 2), `local-pos-backup-${timestamp}.json`, 'application/json;charset=utf-8')
+  }
+
+  async function restoreBackup(file) {
+    if (session.role !== 'admin' || !file) return
+
+    try {
+      const text = await file.text()
+      const backup = JSON.parse(text)
+      const result = await restoreBackupData(backup)
+      setData(result.data)
+      setCart([])
+      setAmountPaid('')
+      setDiscountAmount('')
+      setSelectedCustomer('c-walkin')
+      setRecentSale(null)
+      setError('')
+    } catch (apiError) {
+      setError(apiError.message || 'Backup file could not be restored.')
+    }
+  }
+
+  async function updateSaleStatus(sale, type) {
+    const label = type === 'refund' ? 'refund' : 'void'
+    if (!window.confirm(`Mark ${sale.number} as ${label}ed and return items to stock?`)) return
+
+    try {
+      const result = await cancelSale(sale.id, type)
+      setData(result.data)
+      setError('')
+    } catch (apiError) {
+      setError(apiError.message)
+    }
+  }
+
+  function printReceipt(sale) {
+    const receiptWindow = window.open('', '_blank', 'width=420,height=720')
+    if (!receiptWindow) {
+      setError('Popup was blocked. Allow popups to print receipts.')
+      return
+    }
+
+    receiptWindow.document.write(createReceiptHtml(sale))
+    receiptWindow.document.close()
+    receiptWindow.focus()
+    receiptWindow.print()
+  }
+
+  async function shareReceipt(sale) {
+    const text = createReceiptText(sale)
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `Receipt ${sale.number}`, text })
+        return
+      }
+      await navigator.clipboard.writeText(text)
+      setError('Receipt copied to clipboard.')
+    } catch (apiError) {
+      setError(apiError.message || 'Receipt could not be shared.')
+    }
   }
 
   return (
@@ -322,6 +414,7 @@ export function App() {
                 <h2 className="text-2xl font-semibold tracking-normal">Point of Sales</h2>
                 <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-600">{session.label}</span>
               </div>
+              <p className="mt-1 text-sm text-zinc-500">Data is stored on this device. Export backups regularly.</p>
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -336,6 +429,14 @@ export function App() {
                   </>
                 )}
               </div>
+              <button
+                type="button"
+                title={theme === 'dark' ? 'Use light mode' : 'Use dark mode'}
+                onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+                className="grid h-10 w-full place-items-center rounded-md border border-zinc-200 text-zinc-600 hover:bg-zinc-50 sm:w-10"
+              >
+                {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+              </button>
               <button
                 type="button"
                 onClick={logout}
@@ -369,17 +470,25 @@ export function App() {
               change={change}
               checkout={checkout}
               customers={data.customers}
+              discount={discount}
+              discountAmount={discountAmount}
+              discountType={discountType}
               filteredProducts={filteredProducts}
               onAddToCart={addToCart}
               onAmountPaid={setAmountPaid}
+              onDiscountAmount={setDiscountAmount}
+              onDiscountType={setDiscountType}
               onPaymentMethod={setPaymentMethod}
+              onPrintReceipt={printReceipt}
               onQuery={setQuery}
               onQuantity={updateQuantity}
               onRemove={removeCartItem}
+              onShareReceipt={shareReceipt}
               onSelectedCustomer={setSelectedCustomer}
               paid={paid}
               paymentMethod={paymentMethod}
               query={query}
+              recentSale={recentSale}
               selectedCustomer={selectedCustomer}
               subtotal={subtotal}
               tax={tax}
@@ -400,14 +509,22 @@ export function App() {
             />
           )}
 
-          {activeView === 'transactions' && <TransactionsView sales={data.sales} />}
+          {activeView === 'transactions' && (
+            <TransactionsView
+              onPrintReceipt={printReceipt}
+              onRefundSale={(sale) => updateSaleStatus(sale, 'refund')}
+              onShareReceipt={shareReceipt}
+              onVoidSale={(sale) => updateSaleStatus(sale, 'void')}
+              sales={data.sales}
+            />
+          )}
 
           {session.role === 'admin' && activeView === 'reports' && (
-            <ReportsView metrics={metrics} onExportData={exportData} products={data.products} sales={data.sales} />
+            <ReportsView metrics={metrics} onExportCsvData={exportCsvData} onExportData={exportData} products={data.products} sales={data.sales} />
           )}
 
           {session.role === 'admin' && activeView === 'settings' && (
-            <SettingsView onSaveSettings={saveSettings} settings={data.settings} />
+            <SettingsView onExportBackup={exportBackup} onRestoreBackup={restoreBackup} onSaveSettings={saveSettings} settings={data.settings} />
           )}
         </div>
       </section>
@@ -421,8 +538,12 @@ function createSalesReportWorkbook(sales, metrics) {
     date: todayLabel(new Date(sale.date)),
     customer: sale.customerName,
     payment: sale.paymentMethod,
+    status: sale.status || 'completed',
     items: sale.items.reduce((sum, item) => sum + item.quantity, 0),
     subtotal: sale.subtotal,
+    discountType: sale.discountType || 'amount',
+    discountValue: sale.discountValue ?? sale.discount ?? 0,
+    discount: sale.discount || 0,
     tax: sale.tax,
     total: sale.total,
     paid: sale.paid,
@@ -463,14 +584,18 @@ function createSalesReportWorkbook(sales, metrics) {
       ['Transactions', metrics.orders],
     ])}
     ${createExcelTable('Transactions', [
-      ['Invoice', 'Date', 'Customer', 'Payment', 'Items', 'Subtotal', 'Tax', 'Total', 'Paid', 'Change', 'Profit'],
+      ['Invoice', 'Date', 'Customer', 'Payment', 'Status', 'Items', 'Subtotal', 'Discount Type', 'Discount Value', 'Discount', 'Tax', 'Total', 'Paid', 'Change', 'Profit'],
       ...transactions.map((sale) => [
         sale.invoice,
         sale.date,
         sale.customer,
         sale.payment,
+        sale.status,
         sale.items,
         sale.subtotal,
+        sale.discountType,
+        sale.discountValue,
+        sale.discount,
         sale.tax,
         sale.total,
         sale.paid,
@@ -494,6 +619,157 @@ function createSalesReportWorkbook(sales, metrics) {
     ])}
   </body>
 </html>`
+}
+
+function createSalesReportCsv(sales) {
+  const rows = [
+    ['Type', 'Invoice', 'Date', 'Customer', 'Payment', 'Status', 'SKU', 'Product', 'Quantity', 'Subtotal', 'Discount Type', 'Discount Value', 'Discount', 'Tax', 'Total', 'Paid', 'Change', 'Profit'],
+  ]
+
+  sales.forEach((sale) => {
+    rows.push([
+      'Sale',
+      sale.number,
+      todayLabel(new Date(sale.date)),
+      sale.customerName,
+      sale.paymentMethod,
+      sale.status || 'completed',
+      '',
+      '',
+      sale.items.reduce((sum, item) => sum + item.quantity, 0),
+      sale.subtotal,
+      sale.discountType || 'amount',
+      sale.discountValue ?? sale.discount ?? 0,
+      sale.discount || 0,
+      sale.tax,
+      sale.total,
+      sale.paid,
+      sale.change,
+      sale.profit,
+    ])
+
+    sale.items.forEach((item) => {
+      rows.push([
+        'Item',
+        sale.number,
+        todayLabel(new Date(sale.date)),
+        sale.customerName,
+        sale.paymentMethod,
+        sale.status || 'completed',
+        item.sku,
+        item.name,
+        item.quantity,
+        '',
+        '',
+        '',
+        '',
+        '',
+        item.lineTotal,
+        '',
+        '',
+        (item.price - item.cost) * item.quantity,
+      ])
+    })
+  })
+
+  return rows.map((row) => row.map(escapeCsvCell).join(',')).join('\n')
+}
+
+function createReceiptText(sale) {
+  const lines = [
+    'Local POS',
+    `Receipt: ${sale.number}`,
+    `Date: ${todayLabel(new Date(sale.date))}`,
+    `Customer: ${sale.customerName}`,
+    `Payment: ${sale.paymentMethod}`,
+    `Status: ${sale.status || 'completed'}`,
+    '',
+    ...sale.items.map((item) => `${item.name} x${item.quantity} - ${formatCurrency(item.lineTotal)}`),
+    '',
+    `Subtotal: ${formatCurrency(sale.subtotal)}`,
+    `Discount: -${formatCurrency(sale.discount || 0)}`,
+    `Discount Type: ${formatDiscountType(sale)}`,
+    `Tax: ${formatCurrency(sale.tax)}`,
+    `Total: ${formatCurrency(sale.total)}`,
+    `Paid: ${formatCurrency(sale.paid)}`,
+    `Change: ${formatCurrency(sale.change)}`,
+    '',
+    'Thank you',
+  ]
+
+  return lines.join('\n')
+}
+
+function createReceiptHtml(sale) {
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapeExcelCell(sale.number)}</title>
+    <style>
+      body { color: #111827; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+      .receipt { margin: 0 auto; max-width: 360px; }
+      h1 { font-size: 20px; margin: 0 0 4px; text-align: center; }
+      .muted { color: #52525b; font-size: 12px; margin: 2px 0; text-align: center; }
+      table { border-collapse: collapse; margin-top: 18px; width: 100%; }
+      td { border-bottom: 1px solid #e4e4e7; font-size: 12px; padding: 8px 0; vertical-align: top; }
+      .right { text-align: right; }
+      .total td { border-bottom: 0; font-size: 15px; font-weight: 700; }
+      @media print { body { padding: 0; } }
+    </style>
+  </head>
+  <body>
+    <div class="receipt">
+      <h1>Local POS</h1>
+      <p class="muted">${escapeExcelCell(sale.number)} · ${escapeExcelCell(todayLabel(new Date(sale.date)))}</p>
+      <p class="muted">${escapeExcelCell(sale.customerName)} · ${escapeExcelCell(sale.paymentMethod)}</p>
+      <table>
+        <tbody>
+          ${sale.items
+            .map(
+              (item) => `<tr>
+                <td>${escapeExcelCell(item.name)}<br />${escapeExcelCell(item.quantity)} x ${escapeExcelCell(formatCurrency(item.price))}</td>
+                <td class="right">${escapeExcelCell(formatCurrency(item.lineTotal))}</td>
+              </tr>`,
+            )
+            .join('')}
+          <tr><td>Subtotal</td><td class="right">${escapeExcelCell(formatCurrency(sale.subtotal))}</td></tr>
+          <tr><td>Discount (${escapeExcelCell(formatDiscountType(sale))})</td><td class="right">-${escapeExcelCell(formatCurrency(sale.discount || 0))}</td></tr>
+          <tr><td>Tax</td><td class="right">${escapeExcelCell(formatCurrency(sale.tax))}</td></tr>
+          <tr class="total"><td>Total</td><td class="right">${escapeExcelCell(formatCurrency(sale.total))}</td></tr>
+          <tr><td>Paid</td><td class="right">${escapeExcelCell(formatCurrency(sale.paid))}</td></tr>
+          <tr><td>Change</td><td class="right">${escapeExcelCell(formatCurrency(sale.change))}</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">Thank you</p>
+    </div>
+  </body>
+</html>`
+}
+
+function downloadBlob(content, filename, type) {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function calculateDiscount(subtotal, discountType, discountValue) {
+  const value = Math.max(Number(discountValue) || 0, 0)
+  if (discountType === 'percent') {
+    return Math.min(Math.round(subtotal * Math.min(value, 100) / 100), subtotal)
+  }
+  return Math.min(value, subtotal)
+}
+
+function formatDiscountType(sale) {
+  if (sale.discountType === 'percent') return `${Number(sale.discountValue || 0)}%`
+  return 'amount'
 }
 
 function createExcelTable(title, rows) {
@@ -527,4 +803,10 @@ function escapeExcelCell(value) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+function escapeCsvCell(value) {
+  const text = String(value ?? '')
+  if (!/[",\n]/.test(text)) return text
+  return `"${text.replace(/"/g, '""')}"`
 }

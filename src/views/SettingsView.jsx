@@ -1,7 +1,7 @@
-import { Plus, Save, ShieldCheck, Trash2 } from 'lucide-react'
+import { Download, Plus, Save, ShieldCheck, Trash2, Upload } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-export function SettingsView({ onSaveSettings, settings }) {
+export function SettingsView({ onExportBackup, onRestoreBackup, onSaveSettings, settings }) {
   const [form, setForm] = useState(settings)
   const [categoryName, setCategoryName] = useState('')
   const [message, setMessage] = useState('')
@@ -98,6 +98,38 @@ export function SettingsView({ onSaveSettings, settings }) {
             <p className="mt-1 text-sm text-zinc-500">Sales, inventory, and transactions.</p>
           </div>
         </div>
+      </section>
+
+      <section className="rounded-md border border-zinc-200 bg-white p-5 shadow-soft xl:col-span-2">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">Backup and Restore</h3>
+            <p className="text-sm text-zinc-500">Data is stored on this device. Export backups regularly before changing phones or clearing app data.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onExportBackup}
+            className="flex h-10 items-center justify-center gap-2 rounded-md border border-zinc-200 px-3 text-sm font-semibold text-zinc-600 hover:bg-zinc-50"
+          >
+            <Download size={16} />
+            Export Backup
+          </button>
+        </div>
+
+        <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-4 py-8 text-center text-sm text-zinc-600 hover:bg-zinc-100">
+          <Upload size={20} className="text-zinc-500" />
+          <span className="font-semibold">Restore JSON backup</span>
+          <span>Existing local data will be replaced by the selected backup file.</span>
+          <input
+            accept="application/json,.json"
+            className="sr-only"
+            type="file"
+            onChange={(event) => {
+              onRestoreBackup(event.target.files?.[0])
+              event.target.value = ''
+            }}
+          />
+        </label>
       </section>
 
       <section className="rounded-md border border-zinc-200 bg-white p-5 shadow-soft xl:col-span-2">

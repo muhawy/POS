@@ -24,6 +24,12 @@ function normalizeData(data) {
     sales: Array.isArray(data?.sales)
       ? data.sales.map((sale) => ({
           ...sale,
+          discount: Number(sale.discount) || 0,
+          discountType: sale.discountType || 'amount',
+          discountValue: Number(sale.discountValue ?? sale.discount) || 0,
+          status: sale.status || 'completed',
+          cancelledAt: sale.cancelledAt || null,
+          cancellationType: sale.cancellationType || null,
           items: Array.isArray(sale.items)
             ? sale.items.map((item) => ({ ...item, imageUrl: item.imageUrl || '' }))
             : [],
@@ -83,6 +89,14 @@ function createId(prefix) {
 
 function createInvoiceNumber(sales) {
   return `INV-${String(sales.length + 1).padStart(5, '0')}`
+}
+
+function calculateDiscount(subtotal, discountType, discountValue) {
+  const value = Math.max(Number(discountValue) || 0, 0)
+  if (discountType === 'percent') {
+    return Math.min(Math.round(subtotal * Math.min(value, 100) / 100), subtotal)
+  }
+  return Math.min(value, subtotal)
 }
 
 function getCustomer(data, customerId) {
@@ -153,6 +167,8 @@ function checkoutLocalSale(input) {
   const data = readLocalData()
   const cart = Array.isArray(input.cart) ? input.cart : []
   const paid = Number(input.paid) || 0
+  const discountType = input.discountType === 'percent' ? 'percent' : 'amount'
+  const discountValue = Number(input.discountValue ?? input.discount) || 0
   const paymentMethod = String(input.paymentMethod ?? 'Cash')
   const customerId = String(input.customerId ?? 'c-walkin')
 
@@ -169,8 +185,10 @@ function checkoutLocalSale(input) {
   })
 
   const subtotal = products.reduce((sum, item) => sum + item.price * item.quantity, 0)
-  const tax = data.settings.taxEnabled ? Math.round(subtotal * TAX_RATE) : 0
-  const total = subtotal + tax
+  const appliedDiscount = calculateDiscount(subtotal, discountType, discountValue)
+  const taxableSubtotal = subtotal - appliedDiscount
+  const tax = data.settings.taxEnabled ? Math.round(taxableSubtotal * TAX_RATE) : 0
+  const total = taxableSubtotal + tax
   if (paid < total) throw new Error('Paid amount is lower than total.')
 
   const saleItems = products.map((item) => ({
@@ -191,11 +209,17 @@ function checkoutLocalSale(input) {
     customerName: customer.name,
     paymentMethod,
     subtotal,
+    discount: appliedDiscount,
+    discountType,
+    discountValue,
     tax,
     total,
     paid,
     change: paid - total,
-    profit: saleItems.reduce((sum, item) => sum + (item.price - item.cost) * item.quantity, 0),
+    profit: saleItems.reduce((sum, item) => sum + (item.price - item.cost) * item.quantity, 0) - appliedDiscount,
+    status: 'completed',
+    cancelledAt: null,
+    cancellationType: null,
     items: saleItems,
   }
 
@@ -214,8 +238,43 @@ function checkoutLocalSale(input) {
   return { sale, data: nextData }
 }
 
+function cancelLocalSale(saleId, type) {
+  const data = readLocalData()
+  const cancellationType = type === 'refund' ? 'refund' : 'void'
+  const sale = data.sales.find((item) => item.id === saleId)
+  if (!sale) throw new Error('Sale not found.')
+  if ((sale.status || 'completed') !== 'completed') throw new Error('Sale is already cancelled.')
+
+  const quantityByProduct = new Map()
+  sale.items.forEach((item) => {
+    quantityByProduct.set(item.productId, (quantityByProduct.get(item.productId) || 0) + Number(item.quantity || 0))
+  })
+
+  const products = data.products.map((product) => ({
+    ...product,
+    stock: product.stock + (quantityByProduct.get(product.id) || 0),
+  }))
+  const sales = data.sales.map((item) =>
+    item.id === saleId
+      ? {
+          ...item,
+          status: cancellationType === 'refund' ? 'refunded' : 'voided',
+          cancelledAt: new Date().toISOString(),
+          cancellationType,
+        }
+      : item,
+  )
+  const nextData = writeLocalData({ ...data, products, sales })
+  return { sale: sales.find((item) => item.id === saleId), data: nextData }
+}
+
 function resetLocalDemoData() {
   return writeLocalData(clone(seedData))
+}
+
+function restoreLocalBackupData(input) {
+  const nextData = writeLocalData(input)
+  return { data: nextData }
 }
 
 function updateLocalSettings(input) {
@@ -287,6 +346,17 @@ export function checkoutSale(order) {
   return Promise.resolve(checkoutLocalSale(order))
 }
 
+export function cancelSale(saleId, type) {
+  if (useRemoteApi) {
+    return request(`/api/sales/${saleId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ type }),
+    })
+  }
+
+  return Promise.resolve(cancelLocalSale(saleId, type))
+}
+
 export function resetDemoData() {
   if (useRemoteApi) {
     return request('/api/reset', {
@@ -295,6 +365,17 @@ export function resetDemoData() {
   }
 
   return Promise.resolve(resetLocalDemoData())
+}
+
+export function restoreBackupData(data) {
+  if (useRemoteApi) {
+    return request('/api/import', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  return Promise.resolve(restoreLocalBackupData(data))
 }
 
 export function updateSettings(settings) {

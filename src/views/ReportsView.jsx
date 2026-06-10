@@ -10,19 +10,20 @@ const chartModes = [
   { id: 'month', label: 'Month' },
 ]
 
-export function ReportsView({ metrics, onExportData, products, sales }) {
+export function ReportsView({ metrics, onExportCsvData, onExportData, products, sales }) {
   const [chartMode, setChartMode] = useState('week')
+  const completedSales = sales.filter((sale) => (sale.status || 'completed') === 'completed')
   const bestSellers = products
     .map((product) => ({
       ...product,
-      sold: sales.reduce((sum, sale) => {
+      sold: completedSales.reduce((sum, sale) => {
         const item = sale.items.find((saleItem) => saleItem.productId === product.id)
         return sum + (item?.quantity ?? 0)
       }, 0),
     }))
     .sort((a, b) => b.sold - a.sold)
     .slice(0, 5)
-  const salesChart = buildSalesChart(sales, chartMode)
+  const salesChart = buildSalesChart(completedSales, chartMode)
   const maxRevenue = Math.max(...salesChart.points.map((point) => point.revenue), 1)
 
   return (
@@ -30,14 +31,24 @@ export function ReportsView({ metrics, onExportData, products, sales }) {
       <section className="rounded-md border border-zinc-200 bg-white p-5 shadow-soft">
         <div className="mb-5 flex items-center justify-between gap-3">
           <h3 className="text-lg font-semibold">Business Summary</h3>
-          <button
-            type="button"
-            onClick={onExportData}
-            className="flex h-10 items-center justify-center gap-2 rounded-md border border-zinc-200 px-3 text-sm font-semibold text-zinc-600 hover:bg-zinc-50"
-          >
-            <Download size={16} />
-            Export Excel
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onExportCsvData}
+              className="flex h-10 items-center justify-center gap-2 rounded-md border border-zinc-200 px-3 text-sm font-semibold text-zinc-600 hover:bg-zinc-50"
+            >
+              <Download size={16} />
+              CSV
+            </button>
+            <button
+              type="button"
+              onClick={onExportData}
+              className="flex h-10 items-center justify-center gap-2 rounded-md border border-zinc-200 px-3 text-sm font-semibold text-zinc-600 hover:bg-zinc-50"
+            >
+              <Download size={16} />
+              Excel
+            </button>
+          </div>
         </div>
         <div className="space-y-4">
           <SummaryRow label="Revenue" value={formatCurrency(metrics.revenue)} strong />

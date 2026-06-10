@@ -45,11 +45,17 @@ db.exec(`
     customer_name TEXT NOT NULL,
     payment_method TEXT NOT NULL,
     subtotal INTEGER NOT NULL,
+    discount INTEGER NOT NULL DEFAULT 0,
+    discount_type TEXT NOT NULL DEFAULT 'amount',
+    discount_value REAL NOT NULL DEFAULT 0,
     tax INTEGER NOT NULL,
     total INTEGER NOT NULL,
     paid INTEGER NOT NULL,
     change_amount INTEGER NOT NULL,
     profit INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'completed',
+    cancelled_at TEXT,
+    cancellation_type TEXT,
     FOREIGN KEY (customer_id) REFERENCES customers(id)
   );
 
@@ -76,6 +82,12 @@ db.exec(`
 for (const statement of [
   "ALTER TABLE products ADD COLUMN image_url TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE sale_items ADD COLUMN image_url TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE sales ADD COLUMN discount INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE sales ADD COLUMN discount_type TEXT NOT NULL DEFAULT 'amount'",
+  "ALTER TABLE sales ADD COLUMN discount_value REAL NOT NULL DEFAULT 0",
+  "ALTER TABLE sales ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'",
+  "ALTER TABLE sales ADD COLUMN cancelled_at TEXT",
+  "ALTER TABLE sales ADD COLUMN cancellation_type TEXT",
 ]) {
   try {
     db.exec(statement)
@@ -107,6 +119,17 @@ export function resetDatabase(seedData) {
     INSERT INTO settings (key, value)
     VALUES (?, ?)
   `)
+  const insertSale = db.prepare(`
+    INSERT INTO sales (
+      id, number, date, customer_id, customer_name, payment_method,
+      subtotal, discount, discount_type, discount_value, tax, total, paid, change_amount, profit, status, cancelled_at, cancellation_type
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const insertSaleItem = db.prepare(`
+    INSERT INTO sale_items (sale_id, product_id, name, sku, price, cost, image_url, quantity, line_total)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
 
   seedData.products.forEach((product) => {
     insertProduct.run(product.id, product.name, product.sku, product.category, product.price, product.cost, product.stock, product.imageUrl || '')
@@ -118,6 +141,32 @@ export function resetDatabase(seedData) {
 
   Object.entries(seedData.settings).forEach(([key, value]) => {
     insertSetting.run(key, JSON.stringify(value))
+  })
+
+  ;(seedData.sales || []).forEach((sale) => {
+    insertSale.run(
+      sale.id,
+      sale.number,
+      sale.date,
+      sale.customerId,
+      sale.customerName,
+      sale.paymentMethod,
+      sale.subtotal,
+      Number(sale.discount) || 0,
+      sale.discountType || 'amount',
+      Number(sale.discountValue ?? sale.discount) || 0,
+      sale.tax,
+      sale.total,
+      sale.paid,
+      sale.change,
+      sale.profit,
+      sale.status || 'completed',
+      sale.cancelledAt || null,
+      sale.cancellationType || null,
+    )
+    ;(sale.items || []).forEach((item) => {
+      insertSaleItem.run(sale.id, item.productId, item.name, item.sku, item.price, item.cost, item.imageUrl || '', item.quantity, item.lineTotal)
+    })
   })
 }
 

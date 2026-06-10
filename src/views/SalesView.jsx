@@ -1,4 +1,4 @@
-import { Minus, Plus, ReceiptText, Search, ShoppingCart, X } from 'lucide-react'
+import { Minus, Plus, Printer, ReceiptText, Search, Share2, ShoppingCart, X } from 'lucide-react'
 import { ProductImage } from '../components/ProductImage'
 import { SummaryRow } from '../components/SummaryRow'
 import { formatCurrency } from '../utils/formatters'
@@ -72,6 +72,30 @@ function CartPanel(props) {
         </div>
       </div>
 
+      {props.recentSale && (
+        <div className="border-b border-emerald-100 bg-emerald-50 p-5">
+          <p className="text-sm font-semibold text-emerald-800">Sale completed: {props.recentSale.number}</p>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => props.onPrintReceipt(props.recentSale)}
+              className="flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+            >
+              <Printer size={15} />
+              Print
+            </button>
+            <button
+              type="button"
+              onClick={() => props.onShareReceipt(props.recentSale)}
+              className="flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+            >
+              <Share2 size={15} />
+              Share
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="max-h-[360px] space-y-3 overflow-auto p-5">
         {props.cart.length === 0 ? (
           <div className="rounded-md border border-dashed border-zinc-300 py-10 text-center text-sm text-zinc-500">
@@ -116,6 +140,43 @@ function CartPanel(props) {
 
       <div className="space-y-3 border-t border-zinc-200 p-5">
         <SummaryRow label="Subtotal" value={formatCurrency(props.subtotal)} />
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <label className="block text-sm font-medium text-zinc-600">Discount</label>
+            <div className="inline-grid grid-cols-2 rounded-md border border-zinc-200 bg-zinc-50 p-1">
+              {[
+                { id: 'amount', label: 'Rp' },
+                { id: 'percent', label: '%' },
+              ].map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => props.onDiscountType(option.id)}
+                  className={`h-8 rounded-md px-3 text-sm font-semibold transition ${
+                    props.discountType === option.id ? 'bg-white text-emerald-700 shadow-sm' : 'text-zinc-500 hover:text-zinc-950'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="relative">
+            <input
+              type="number"
+              min="0"
+              max={props.discountType === 'percent' ? '100' : undefined}
+              value={props.discountAmount}
+              onChange={(event) => props.onDiscountAmount(event.target.value)}
+              className="h-11 w-full rounded-md border border-zinc-200 px-3 pr-12 text-sm outline-none ring-emerald-500 focus:ring-2"
+              placeholder={props.discountType === 'percent' ? 'Discount percent' : 'Discount amount'}
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-zinc-400">
+              {props.discountType === 'percent' ? '%' : 'Rp'}
+            </span>
+          </div>
+        </div>
+        <SummaryRow label="Discount applied" value={`-${formatCurrency(props.discount)}`} />
         <SummaryRow label={props.taxEnabled ? 'Tax 11%' : 'Tax disabled'} value={formatCurrency(props.tax)} />
         <SummaryRow label="Total" value={formatCurrency(props.total)} strong />
 
